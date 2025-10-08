@@ -1,0 +1,21 @@
+{
+  "kernels_path": "/Volumes/SSDPortable/data/kernels",
+  "data_path": "/Volumes/SSDPortable/data",
+  "file_names": {
+    "bepi": "bepi_ob_2019_now_rtn",
+    "maven": "maven_2014_2018_removed_smoothed.p",
+    "messenger": "messenger_2007_2015_sceq.p",
+    "msl": "msl_2012_2019_rad.p",
+    "noaa_archive": "noaa_archive_gsm_updated.p",
+    "noaa_rtsw": "noaa_rtsw_last_35files_now.p",
+    "solo": "solo_2020_now_rtn.p",
+    "stereo_a": "stereoa_2007_now_rtn.p",
+    "stereo_a_beacon": "stereoa_beacon_rtn_last_300days_now.p",
+    "stereo_b": "stereob_2007_2014_rtn.p",
+    "ulysses": "ulysses_1990_2009_rtn.p",
+    "vex": "vex_2007_2014_sceq_removed.p",
+    "wind": "wind_1995_now_gse.p",
+    
+    "positions": "positions_all_HEEQ_10min_rad_ed.p"
+  }
+}
