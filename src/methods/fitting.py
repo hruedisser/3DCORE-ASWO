@@ -3,9 +3,82 @@ from ..methods.method import BaseMethod
 from ..models.toroidal import ToroidalModel
 from ..methods.data import FittingData
 from ..methods.abc_smc import abc_smc_worker
-from ..methods.conversions.data_frame_transforms import (
-    HEEQ_to_RTN,
-    RTN_to_GSM
+import importlib
+
+from pathlib import Path
+import sys
+import json
+import io
+import builtins
+import os
+import pathlib
+from unittest.mock import patch
+
+
+
+# Paths
+root = Path(__file__).resolve().parents[1]
+submodule_path = root / "methods" / "sc-data-functions"
+aswo_config_path = Path(__file__).resolve().parents[2] / "config.json"
+submodule_config_path = submodule_path / "config.json"
+
+# Make sure submodule is importable (for its internal absolute imports like `from functions_general import ...`)
+if str(submodule_path) not in sys.path:
+    sys.path.insert(0, str(submodule_path))
+
+# ---------- load & deep-merge configs ----------
+def deep_merge(base: dict, override: dict) -> dict:
+    out = base.copy()
+    for k, v in override.items():
+        if k in out and isinstance(out[k], dict) and isinstance(v, dict):
+            out[k] = deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+with open(aswo_config_path) as f:
+    aswo_cfg = json.load(f)
+with open(submodule_config_path) as f:
+    sub_cfg = json.load(f)
+
+merged_cfg = deep_merge(sub_cfg, aswo_cfg)
+
+# ---------- patch file reads for config.json ----------
+_original_open = builtins.open
+
+def _fake_open(path, *args, **kwargs):
+    # Normalize to string
+    p = str(path)
+    # Only intercept the submodule's config.json, not your own
+    if p.endswith("config.json") and str(submodule_path) in p:
+        return io.StringIO(json.dumps(merged_cfg))
+    return _original_open(path, *args, **kwargs)
+
+def _fake_path_open(self, *args, **kwargs):
+    # Delegate Path.open to the same interceptor
+    return _fake_open(self, *args, **kwargs)
+
+# ---------- optional env overrides (in case load_path checks env) ----------
+# Set both uppercase and lowercase just in case
+os.environ.setdefault("KERNELS_PATH", aswo_cfg.get("kernels_path", ""))
+os.environ.setdefault("kernels_path", aswo_cfg.get("kernels_path", ""))
+
+# ---------- import while patches are active ----------
+with patch("builtins.open", _fake_open), patch.object(pathlib.Path, "open", _fake_path_open):
+    # Load the package __init__
+    spec = importlib.util.spec_from_file_location("sc_data_functions", submodule_path / "__init__.py")
+    sc_data_functions = importlib.util.module_from_spec(spec)
+    sys.modules["sc_data_functions"] = sc_data_functions
+    spec.loader.exec_module(sc_data_functions)
+
+    # IMPORTANT: import submodules that read config **inside the patch**
+    import importlib as _il
+    _il.import_module("sc_data_functions.data_frame_transforms")
+
+# --- Import functions from the now-patched submodule ---
+from sc_data_functions.data_frame_transforms import (
+    HEEQ_to_RTN_mag_components,
+    RTN_to_GSM_components,
 )
 
 import time
@@ -68,6 +141,20 @@ def standard_fit(data_cache = None, t_launch = None, t_s = None, t_e = None, t_f
         t_s = data_cache.mo_begin
     if t_e == None:
         t_e = data_cache.endtime
+
+    if t_fit == None or t_fit == []:
+        time_difference = (t_e - t_s)
+
+        interval = time_difference / 5
+
+        t_1 = t_s + interval
+        t_2 = t_s + 2 * interval
+        t_3 = t_s + 3 * interval
+        t_4 = t_s + 4 * interval
+
+        t_fit = [t_1, t_2, t_3, t_4]
+
+        print(f"Fitting points not given, setting to 4 equidistant points between {t_s} and {t_e}:")
 
     base_fitter.add_observer(
         observer=data_cache.spacecraft,
@@ -335,9 +422,10 @@ def standard_fit(data_cache = None, t_launch = None, t_s = None, t_e = None, t_f
 
     return extra_args
 
+def round_dataframe(df):
+    return df.applymap(lambda x: round(x, 2) if isinstance(x, float) else x)
 
-
-def load_fit(output_folder = None, fit_file = None, data_cache = None):
+def load_ensemble(output_folder = None, fit_file = None, data_cache = None):
 
     output_folder = output_path / data_cache.idd
 
@@ -362,42 +450,15 @@ def load_fit(output_folder = None, fit_file = None, data_cache = None):
         ensemble_RTN = np.empty_like(ensemble_HEEQ)
         ensemble_GSM = np.empty_like(ensemble_HEEQ)
 
-        # Build static part of the DataFrame once
-        base_df = pd.DataFrame({
-            "time": data_cache.t_data,
-            "x": x,
-            "y": y,
-            "z": z,
-            # include any other static or placeholder columns required by your transform functions
-            "vx": 0.0,
-            "vy": 0.0,
-            "vz": 0.0,
-            "vt": 0.0,
-            "np": 0.0,
-            "tp": 0.0,
-            "r": np.sqrt(x**2 + y**2 + z**2),
-            "lat": np.degrees(np.arctan2(z, np.sqrt(x**2 + y**2))),
-            "lon": np.degrees(np.arctan2(y, x)),
-        })
 
         for k in tqdm(range(ensemble_HEEQ.shape[1])):
+            bx, by, bz = ensemble_HEEQ[:,k,0], ensemble_HEEQ[:,k,1], ensemble_HEEQ[:,k,2]
 
-            df = base_df.copy()
-            df["bx"] = ensemble_HEEQ[:,k,0]
-            df["by"] = ensemble_HEEQ[:,k,1]
-            df["bz"] = ensemble_HEEQ[:,k,2]
+            bx_rtn, by_rtn, bz_rtn = HEEQ_to_RTN_mag_components(bx, by, bz, x, y, z)
+            bx_gsm, by_gsm, bz_gsm = RTN_to_GSM_components(bx_rtn, by_rtn, bz_rtn, x, y, z, data_cache.t_data)
 
-            # Transform to RTN
-            df_rtn = HEEQ_to_RTN(df)
-            ensemble_RTN[:,k,0] = df_rtn["bx"].values
-            ensemble_RTN[:,k,1] = df_rtn["by"].values
-            ensemble_RTN[:,k,2] = df_rtn["bz"].values
-
-            # Transform to GSM
-            df_gsm = RTN_to_GSM(df_rtn)
-            ensemble_GSM[:,k,0] = df_gsm["bx"].values
-            ensemble_GSM[:,k,1] = df_gsm["by"].values
-            ensemble_GSM[:,k,2] = df_gsm["bz"].values
+            ensemble_RTN[:,k,0], ensemble_RTN[:,k,1], ensemble_RTN[:,k,2] = bx_rtn, by_rtn, bz_rtn
+            ensemble_GSM[:,k,0], ensemble_GSM[:,k,1], ensemble_GSM[:,k,2] = bx_gsm, by_gsm, bz_gsm
 
         ensemble_data = {
             "HEEQ": ensemble_HEEQ,
@@ -411,3 +472,76 @@ def load_fit(output_folder = None, fit_file = None, data_cache = None):
             print(f'Saved ensemble to {ensemble_file}')
 
     return ensemble_data
+
+
+def load_fit_parameters(fit_file = None, t0=None):
+
+    extra_args = pickle.load(open(fit_file, "rb"))
+
+    iparams_array = extra_args["model_obj"].iparams_arr
+    results_df = pd.DataFrame(iparams_array)
+    
+    # drop first column
+    results_df.drop(results_df.columns[[0]], axis=1, inplace=True)
+    # rename columns
+    results_df.columns = ['Longitude', 'Latitude', 'Inclination', 'Diameter 1 AU', 'Aspect Ratio', 'Launch Radius', 'Launch Velocity', 'T_Factor', 'Expansion Rate', 'Magnetic Decay Rate', 'Magnetic Field Strength 1 AU', 'Background Drag', 'Background Velocity']
+
+    # Add Epsilon column from extra_args
+    result_epsilons = extra_args['epses']
+    num_rows = min(len(results_df), len(result_epsilons))
+    results_df.insert(0, 'RMSE Ɛ', result_epsilons[:num_rows])
+
+    # Calculate Twist number
+    delta = results_df["Aspect Ratio"].values
+    h = (delta - 1) ** 2 / (1 + delta) ** 2
+    Efac = np.pi * (1 + delta) * (1 + 3 * h / (10 + np.sqrt(4 - 3 * h)))
+
+    twist = results_df["T_Factor"].values / Efac
+
+    results_df.insert(len(results_df.columns), "Number of Twists", twist[:num_rows])      
+
+
+    # Calculate statistics
+    mean_values = np.mean(results_df, axis=0)
+    std_values = np.std(results_df, axis=0)
+    median_values = np.median(results_df, axis=0)
+    min_values = np.min(results_df, axis=0)
+    max_values = np.max(results_df, axis=0)
+    q1_values = np.percentile(results_df, 25, axis=0)
+    q3_values = np.percentile(results_df, 75, axis=0)
+    skewness_values = results_df.skew(axis=0)
+    kurtosis_values = results_df.kurtosis(axis=0)
+
+    mean_row = pd.DataFrame(
+        [
+            mean_values,
+            std_values,
+            median_values,
+            min_values,
+            max_values,
+            q1_values,
+            q3_values,
+            skewness_values,
+            kurtosis_values
+        ],
+        columns=results_df.columns
+    )
+
+
+    results_df['Launch Time'] = t0.strftime("%Y-%m-%d %H:%M")
+    mean_row['Launch Time'] = t0.strftime("%Y-%m-%d %H:%M")
+
+    results_df.insert(0, "Index", range(0, num_rows))
+
+    # Round all float values to 2 decimal places
+    results_df = round_dataframe(results_df)
+    mean_row = round_dataframe(mean_row)
+
+    # Add the index column
+    mean_row.insert(0, 'Index', ["Mean", "Standard Deviation", "Median", "Minimum", "Maximum", "Q1", "Q3", "Skewness", "Kurtosis"],)
+
+    mean_row_df = pd.DataFrame([mean_row.iloc[0]], columns=results_df.columns)
+
+    resdffinal = pd.concat([results_df, mean_row_df], axis=0)
+
+    return resdffinal, mean_row
