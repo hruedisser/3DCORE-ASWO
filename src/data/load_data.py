@@ -5,12 +5,98 @@ from pathlib import Path
 import pandas as pd
 import numpy as np
 
-from ..methods.conversions.data_frame_transforms import (
+import importlib.util
+import sys
+import io
+import os
+import builtins
+import pathlib
+from pathlib import Path
+from unittest.mock import patch
+
+###############################################################
+####### Patch numpy.rec to avoid import errors in the submodule
+###############################################################
+import sys, types, numpy
+
+# Create fake numpy.rec module
+numpy_rec = types.ModuleType("numpy.rec")
+
+# Assign the real numpy.recarray class to it (works since numpy.recarray still exists)
+numpy_rec.recarray = numpy.recarray
+
+# Register fake module so pickle finds it
+sys.modules["numpy.rec"] = numpy_rec
+###############################################################
+
+
+
+# Paths
+root = Path(__file__).resolve().parents[1]
+submodule_path = root / "methods" / "sc-data-functions"
+aswo_config_path = Path(__file__).resolve().parents[2] / "config.json"
+submodule_config_path = submodule_path / "config.json"
+
+# Make sure submodule is importable (for its internal absolute imports like `from functions_general import ...`)
+if str(submodule_path) not in sys.path:
+    sys.path.insert(0, str(submodule_path))
+
+# ---------- load & deep-merge configs ----------
+def deep_merge(base: dict, override: dict) -> dict:
+    out = base.copy()
+    for k, v in override.items():
+        if k in out and isinstance(out[k], dict) and isinstance(v, dict):
+            out[k] = deep_merge(out[k], v)
+        else:
+            out[k] = v
+    return out
+
+with open(aswo_config_path) as f:
+    aswo_cfg = json.load(f)
+with open(submodule_config_path) as f:
+    sub_cfg = json.load(f)
+
+merged_cfg = deep_merge(sub_cfg, aswo_cfg)
+
+# ---------- patch file reads for config.json ----------
+_original_open = builtins.open
+
+def _fake_open(path, *args, **kwargs):
+    # Normalize to string
+    p = str(path)
+    # Only intercept the submodule's config.json, not your own
+    if p.endswith("config.json") and str(submodule_path) in p:
+        return io.StringIO(json.dumps(merged_cfg))
+    return _original_open(path, *args, **kwargs)
+
+def _fake_path_open(self, *args, **kwargs):
+    # Delegate Path.open to the same interceptor
+    return _fake_open(self, *args, **kwargs)
+
+# ---------- optional env overrides (in case load_path checks env) ----------
+# Set both uppercase and lowercase just in case
+os.environ.setdefault("KERNELS_PATH", aswo_cfg.get("kernels_path", ""))
+os.environ.setdefault("kernels_path", aswo_cfg.get("kernels_path", ""))
+
+# ---------- import while patches are active ----------
+with patch("builtins.open", _fake_open), patch.object(pathlib.Path, "open", _fake_path_open):
+    # Load the package __init__
+    spec = importlib.util.spec_from_file_location("sc_data_functions", submodule_path / "__init__.py")
+    sc_data_functions = importlib.util.module_from_spec(spec)
+    sys.modules["sc_data_functions"] = sc_data_functions
+    spec.loader.exec_module(sc_data_functions)
+
+    # IMPORTANT: import submodules that read config **inside the patch**
+    import importlib as _il
+    _il.import_module("sc_data_functions.data_frame_transforms")
+
+# --- Import functions from the now-patched submodule ---
+from sc_data_functions.data_frame_transforms import (
     HEEQ_to_RTN,
+    GSM_to_RTN,
     RTN_to_GSM,
-    GSM_to_HEEQ,
     RTN_to_HEEQ,
-    GSE_to_GSM,
+    GSE_to_GSM
 )
 
 # === Load file_names from JSON config ===
@@ -22,7 +108,6 @@ def load_file_names(config_file=Path(__file__).resolve().parents[2] /'config.jso
 # Load file_names once globally
 file_names = load_file_names()
 print(f"File names loaded")
-
 
 # === Load data_path from JSON config ===
 def load_data_path(config_file=Path(__file__).resolve().parents[2] /'config.json'):
@@ -113,8 +198,6 @@ def load_wind(data_begin, data_end):
     return b_data, pos_data, t_data, body_data, v_data
     
 
-
-
 def get_data_from_file_name(file_name, data_begin, data_end, delta = 60):
 
     positions_name = file_names['positions']
@@ -197,21 +280,26 @@ def get_data_from_file_name(file_name, data_begin, data_end, delta = 60):
 
         df_gsm = df_gsm[(df_gsm['time'] >= data_begin) & (df_gsm['time'] <= data_end)]
 
-        if heeq_file is not None:
-            df_heeq = pickle.load(open(Path(data_path, heeq_file), "rb"))
-            df_heeq = pd.DataFrame(df_heeq[0])
-            print(f"Loaded HEEQ data from {heeq_file}")
-        else:
-            df_heeq = GSM_to_HEEQ(df_gsm)
-            print(f"Converted GSM to HEEQ data")
+        if df_gsm.empty:
+            raise ValueError(f"GSM data is empty after filtering for the given date range {data_begin} to {data_end}. Please check the data file.")
         
         if rtn_file is not None:
             df_rtn = pickle.load(open(Path(data_path, rtn_file), "rb"))
             df_rtn = pd.DataFrame(df_rtn[0])
             print(f"Loaded RTN data from {rtn_file}")
+            df_rtn = df_rtn[(df_rtn['time'] >= data_begin) & (df_rtn['time'] <= data_end)]
         else:
-            df_rtn = HEEQ_to_RTN(df_heeq)
+            df_rtn = GSM_to_RTN(df_gsm)
             print(f"Converted HEEQ to RTN data")
+
+        if heeq_file is not None:
+            df_heeq = pickle.load(open(Path(data_path, heeq_file), "rb"))
+            df_heeq = pd.DataFrame(df_heeq[0])
+            print(f"Loaded HEEQ data from {heeq_file}")
+            df_heeq = df_heeq[(df_heeq['time'] >= data_begin) & (df_heeq['time'] <= data_end)]
+        else:
+            df_heeq = RTN_to_HEEQ(df_rtn)
+            print(f"Converted GSM to HEEQ data")
 
     elif heeq_file is not None:
         df_heeq = pickle.load(open(Path(data_path, heeq_file), "rb"))
@@ -219,11 +307,15 @@ def get_data_from_file_name(file_name, data_begin, data_end, delta = 60):
         print(f"Loaded HEEQ data from {heeq_file}")
 
         df_heeq = df_heeq[(df_heeq['time'] >= data_begin) & (df_heeq['time'] <= data_end)]
+
+        if df_heeq.empty:
+            raise ValueError(f"HEEQ data is empty after filtering for the given date range {data_begin} to {data_end}. Please check the data file.")
         
         if rtn_file is not None:
             df_rtn = pickle.load(open(Path(data_path, rtn_file), "rb"))
             df_rtn = pd.DataFrame(df_rtn[0])
             print(f"Loaded RTN data from {rtn_file}")
+            df_rtn = df_rtn[(df_rtn['time'] >= data_begin) & (df_rtn['time'] <= data_end)]
         else:
             df_rtn = HEEQ_to_RTN(df_heeq)
             print(f"Converted HEEQ to RTN data")
@@ -232,6 +324,7 @@ def get_data_from_file_name(file_name, data_begin, data_end, delta = 60):
             df_gsm = pickle.load(open(Path(data_path, gsm_file), "rb"))
             df_gsm = pd.DataFrame(df_gsm[0])
             print(f"Loaded GSM data from {gsm_file}")
+            df_gsm = df_gsm[(df_gsm['time'] >= data_begin) & (df_gsm['time'] <= data_end)]
         else:
             df_gsm = RTN_to_GSM(df_rtn)
             print(f"Converted RTN to GSM data")
@@ -242,11 +335,15 @@ def get_data_from_file_name(file_name, data_begin, data_end, delta = 60):
         print(f"Loaded RTN data from {rtn_file}")
 
         df_rtn = df_rtn[(df_rtn['time'] >= data_begin) & (df_rtn['time'] <= data_end)]
+
+        if df_rtn.empty:
+            raise ValueError(f"RTN data is empty after filtering for the given date range {data_begin} to {data_end}. Please check the data file.")
         
         if heeq_file is not None:
             df_heeq = pickle.load(open(Path(data_path, heeq_file), "rb"))
             df_heeq = pd.DataFrame(df_heeq[0])
             print(f"Loaded HEEQ data from {heeq_file}")
+            df_heeq = df_heeq[(df_heeq['time'] >= data_begin) & (df_heeq['time'] <= data_end)]
         else:
             df_heeq = RTN_to_HEEQ(df_rtn)
             print(f"Converted RTN to HEEQ data")
@@ -255,6 +352,7 @@ def get_data_from_file_name(file_name, data_begin, data_end, delta = 60):
             df_gsm = pickle.load(open(Path(data_path, gsm_file), "rb"))
             df_gsm = pd.DataFrame(df_gsm[0])
             print(f"Loaded GSM data from {gsm_file}")
+            df_gsm = df_gsm[(df_gsm['time'] >= data_begin) & (df_gsm['time'] <= data_end)]
         else:
             df_gsm = RTN_to_GSM(df_rtn)
             print(f"Converted RTN to GSM data")
@@ -266,14 +364,17 @@ def get_data_from_file_name(file_name, data_begin, data_end, delta = 60):
 
         df_gse = df_gse[(df_gse['time'] >= data_begin) & (df_gse['time'] <= data_end)]
 
+        if df_gse.empty:
+            raise ValueError(f"GSE data is empty after filtering for the given date range {data_begin} to {data_end}. Please check the data file.")
+
         df_gsm = GSE_to_GSM(df_gse)
         print(f"Converted GSE to GSM data")
 
-        df_heeq = GSM_to_HEEQ(df_gsm)
-        print(f"Converted GSM to HEEQ data")
+        df_rtn = GSM_to_RTN(df_gsm)
+        print(f"Converted GSM to RTN data")
 
-        df_rtn = HEEQ_to_RTN(df_heeq)
-        print(f"Converted HEEQ to RTN data")
+        df_heeq = RTN_to_HEEQ(df_rtn)
+        print(f"Converted RTN to HEEQ data")
 
 
     df_rtn = df_rtn[(df_rtn['time'] >= data_begin) & (df_rtn['time'] <= data_end)]
@@ -323,8 +424,3 @@ def get_data_from_file_name(file_name, data_begin, data_end, delta = 60):
     v_data = df_heeq["vt"] if "vt" in df_heeq.columns else None
     
     return b_data, pos_data, t_data, body_data, v_data
-
-        
-        
-        
-

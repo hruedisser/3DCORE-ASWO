@@ -9,6 +9,8 @@ import pickle
 import re
 
 import matplotlib.pyplot as plt
+import matplotlib.dates as mdates
+import seaborn as sns
 
 from .load_data import (
     load_bepi,
@@ -26,6 +28,12 @@ from .load_data import (
     load_wind,
 )
 
+sns.set_context("talk")     
+
+sns.set_style("ticks",{'grid.linestyle': '--'})
+
+from ..methods.plotting import reference_frame_names
+
 # === Load data_path from JSON config ===
 def load_data_path(config_file=Path(__file__).resolve().parents[2] /'config.json'):
     with open(config_file, 'r') as f:
@@ -39,7 +47,8 @@ print(f"Data path loaded: {data_path}")
 
 cache_path = Path(__file__).resolve().parents[2] / "cache"
 
-def get_data_cache(idd = None, mean_hours = 24):
+def get_data_cache(idd = None, mean_hours = 24, delta_t_days: int = 3, assumed_duration_hours: int = 21, icme_begin=None, mo_begin=None, mo_end=None):
+
     file_cache_path = cache_path / f"{idd}.p"
 
     if file_cache_path.exists():
@@ -47,7 +56,7 @@ def get_data_cache(idd = None, mean_hours = 24):
         data_cache_obj = pickle.load(open(file_cache_path, "rb"))
     else:
         print(f"No cache found for {idd}, loading data from source")
-        data_cache_obj = DataCache(idd, mean_hours=mean_hours)
+        data_cache_obj = DataCache(idd, mean_hours=mean_hours, delta_t_days=delta_t_days, assumed_duration_hours=assumed_duration_hours, icme_begin=icme_begin, mo_begin=mo_begin, mo_end=mo_end)
         pickle.dump(data_cache_obj, open(file_cache_path, "wb"))
         print(f"Data cached for {idd} at {file_cache_path}")
     return data_cache_obj
@@ -83,10 +92,10 @@ class DataCache(object):
             self.spacecraft = "solo"
             self.b_data, self.pos_data, self.t_data, self.body_data, self.v_data = load_solo(self.data_begin, self.data_end)
         elif any(name in self.idd for name in ["STEREO_A", "STEREO-A", "STEREO A"]):
-            self.spacecraft = "stereo_a"
+            self.spacecraft = "sta"
             self.b_data, self.pos_data, self.t_data, self.body_data, self.v_data = load_stereo_a(self.data_begin, self.data_end)
         elif any(name in self.idd for name in ["STEREO_B", "STEREO-B", "STEREO B"]):
-            self.spacecraft = "stereo_b"
+            self.spacecraft = "stb"
             self.b_data, self.pos_data, self.t_data, self.body_data, self.v_data = load_stereo_b(self.data_begin, self.data_end)
         elif any(name in self.idd for name in ["ULYSSES", "Ulysses"]):
             self.spacecraft = "ulysses"
@@ -100,6 +109,10 @@ class DataCache(object):
 
         if self.v_data is not None:
             t_mask = (np.array(self.t_data) >= self.icme_begin - datetime.timedelta(hours=mean_hours)) & (np.array(self.t_data) < self.icme_begin)
+
+            if mean_hours > delta_t_days * 24:
+                print(f"Warning: mean_hours ({mean_hours}h) is greater than the total data range before the event ({delta_t_days*24}h). Can only compute mean over available data, which is {delta_t_days*24}h.")
+                
             v_before_event = self.v_data[t_mask]
             self.v_mean_before_event = np.mean(v_before_event)
         else:
@@ -153,60 +166,118 @@ class DataCache(object):
         self.data_begin = self.icme_begin - datetime.timedelta(days=delta_t_days)
         self.data_end = self.endtime + datetime.timedelta(days=delta_t_days)
 
-    def quick_insitu_plot(self, reference_frame='HEEQ', delta_time_hours=2, colors = ["r", "g", "b"]):
+    def quick_insitu_plot(
+            self, 
+            reference_frame='HEEQ', 
+            delta_time_hours=2, 
+            colors = ["r", "g", "b"],
+            figsize=(10,6),
+            fontsize=12,
+            lw_insitu=2
+        ):
+
+        start = self.mo_begin - datetime.timedelta(hours=delta_time_hours)
+        end = self.endtime + datetime.timedelta(hours=delta_time_hours)
 
         t_data = np.array(self.t_data)
-        time_mask = (t_data >= (self.mo_begin - datetime.timedelta(hours=delta_time_hours))) & (t_data <= (self.endtime + datetime.timedelta(hours=delta_time_hours)))
+        time_mask = (t_data >= start) & (t_data <= end)
         t_data = t_data[time_mask]
         
-        if reference_frame == "HEEQ":
-            b_data = self.b_data["HEEQ"]
-        elif reference_frame == "GSM":
-            b_data = self.b_data["GSM"]
-        elif reference_frame == "RTN":
-            b_data = self.b_data["RTN"]
+        b_data = self.b_data[reference_frame]
+        ref_frame_names = reference_frame_names[reference_frame]
 
         b_data = b_data[time_mask]
 
-        fig, axes = plt.subplots(2, 1, figsize=(10, 6), sharex=True)
+        fig, axes = plt.subplots(2, 1, figsize=figsize, sharex=True)
 
-        axes[0].plot(t_data, b_data[:,0], label='Bx', color=colors[0])
-        axes[0].plot(t_data, b_data[:,1], label='By', color=colors[1])
-        axes[0].plot(t_data, b_data[:,2], label='Bz', color=colors[2])
-        axes[0].plot(t_data, np.linalg.norm(b_data, axis=1), label='Btot', color='k')
+        axes[0].plot(t_data, np.linalg.norm(b_data, axis=1), label=ref_frame_names[0], color='k', linewidth=lw_insitu)
+        axes[0].plot(t_data, b_data[:,0], label=ref_frame_names[1], color=colors[0], linewidth=lw_insitu)
+        axes[0].plot(t_data, b_data[:,1], label=ref_frame_names[2], color=colors[1], linewidth=lw_insitu)
+        axes[0].plot(t_data, b_data[:,2], label=ref_frame_names[3], color=colors[2], linewidth=lw_insitu)
 
-        axes[0].set_ylabel('Magnetic Field (nT)')
-        axes[0].legend()
+        axes[0].set_ylabel('B [nT]', fontsize=fontsize)
+        axes[0].legend(loc="lower right", fontsize=fontsize, ncol=2)
+        axes[0].tick_params(axis='both', labelsize=fontsize)
+
 
         v_data = self.v_data[time_mask]
         axes[1].plot(t_data, v_data, label='V', color='k')
-        axes[1].set_xlabel('Time')
-        axes[1].set_ylabel('Velocity (km/s)')
+        #axes[1].set_xlabel('Time', fontsize=fontsize)
+        axes[1].set_ylabel('V [km/s]', fontsize=fontsize)
+        axes[1].tick_params(axis='both', labelsize=fontsize)
+
+        date_form = mdates.DateFormatter("%b %d %H")
+        axes[1].xaxis.set_major_formatter(date_form)
+        axes[1].tick_params(axis='x', rotation=25)
+        axes[1].set_xlim(start, end)
+
+        fig.tight_layout()
 
         return fig, axes
     
-    def check_fitting_points(self, t_s, t_e, t_fit, reference_frame='HEEQ', delta_time_hours=2, colors = ["r", "g", "b"]):
+    def check_fitting_points(
+            self, 
+            t_s, 
+            t_e, 
+            t_fit, 
+            reference_frame='HEEQ', 
+            delta_time_hours=2, 
+            colors = ["r", "g", "b"],
+            figsize=(10,6),
+            fontsize=12,
+            lw_insitu=2,
+            lw_fitpts=2
+        ):
 
         if t_s == None:
             t_s = self.mo_begin
         if t_e == None:
             t_e = self.endtime
 
-        fig, axes = self.quick_insitu_plot(reference_frame=reference_frame, delta_time_hours=delta_time_hours, colors = colors)
+        fig, axes = self.quick_insitu_plot(
+            reference_frame=reference_frame, 
+            delta_time_hours=delta_time_hours,
+            colors = colors,
+            figsize=figsize,
+            fontsize=fontsize,
+            lw_insitu=lw_insitu
+        )
 
         axes[0].axvspan(t_s, t_e, color='grey', alpha=0.3)
 
-        axes[0].axvline(t_s, color='red', linestyle='--')
-        axes[0].axvline(t_e, color='red', linestyle='--')
+        axes[0].axvline(t_s, color='red', linestyle='--', alpha=0.75, ls="-.", lw=lw_fitpts)
+        axes[0].axvline(t_e, color='red', linestyle='--', alpha=0.75, ls="-.", lw=lw_fitpts)
+
+        if t_fit == None or t_fit == []:
+            time_difference = (t_e - t_s)
+
+            interval = time_difference / 5
+
+            t_1 = t_s + interval
+            t_2 = t_s + 2 * interval
+            t_3 = t_s + 3 * interval
+            t_4 = t_s + 4 * interval
+
+            t_fit = [t_1, t_2, t_3, t_4]
+
+            print(f"Fitting points not given, setting to 4 equidistant points between {t_s} and {t_e}:")
 
         for t in t_fit:
-            axes[0].axvline(t, color='black', linestyle='--')
+            axes[0].axvline(t, color='black', linestyle='--', alpha=0.75, lw=lw_fitpts)
 
         return fig, axes
     
-    def quick_positions_plot(self, spacecraft = {"psp": "black", "solo":"coral", "sta":"darkred", "stb":"darkgreen", "bepi":"blue"}, planets = {"earth":"mediumseagreen", "mercury":"slategrey", "venus":"darkgoldenrod", "mars":"red"}, symsize_planet=110, symsize_spacecraft=55):
+    def quick_positions_plot(
+            self, 
+            spacecraft = {"psp": "black", "solo":"coral", "sta":"darkred", "stb":"darkgreen", "bepi":"blue"}, 
+            planets = {"earth":"mediumseagreen", "mercury":"slategrey", "venus":"darkgoldenrod", "mars":"red"}, 
+            symsize_planet=110, 
+            symsize_spacecraft=55,
+            figsize=(10,10),
+            fontsize=12
+        ):
 
-        fig = plt.figure(1, figsize=(14,10))
+        fig = plt.figure(1, figsize=figsize)
 
         ax = fig.add_subplot(projection="polar")
 
@@ -281,7 +352,13 @@ class DataCache(object):
 
         ax.set_theta_zero_location("E")
         ax.set_ylim(0, 1.2)
-        ax.legend()
+        ax.legend(loc = "upper right", ncol=3, fontsize=fontsize)
+
+        # --- Apply fontsize globally ---
+        for label in ax.get_xticklabels() + ax.get_yticklabels():
+            label.set_fontsize(fontsize)
+
+        fig.tight_layout()
 
         return fig, ax
     
