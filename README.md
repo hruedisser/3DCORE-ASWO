@@ -90,6 +90,6 @@ The kernels needed for the coordinate transformations are available [here](https
 
 This repository includes the submodule
 ➡️ [sc-data-functions](https://github.com/hruedisser/sc-data-functions)
-which provides shared data handling functions for spacecraft data access, preprocessing, and analysis.
+which provides shared data handling functions for spacecraft data access, preprocessing, and analysis. The submodule was originally forked from [@eedavies](https://github.com/ee-davies/) at [sc-data-functions](https://github.com/ee-davies/sc-data-functions).
 
 ⸻
