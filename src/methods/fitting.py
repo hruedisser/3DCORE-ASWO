@@ -118,6 +118,9 @@ def standard_fit(data_cache = None, t_launch = None, t_s = None, t_e = None, t_f
     summary_type = "norm_rmse"
     fit_coord_system = "HEEQ"
 
+    if not output_path.exists():
+        output_path.mkdir(parents=True, exist_ok=True)
+
     output_folder = output_path / data_cache.idd
 
     if not output_folder.exists():
