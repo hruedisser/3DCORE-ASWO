@@ -24,7 +24,7 @@ Then, set up the Python environment using conda:
 
 ```
 conda env create -f environment.yml
-conda activate 3dcore-aswo
+conda activate aswocore-env
 ```
 
 
