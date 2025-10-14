@@ -103,7 +103,7 @@ processes = []
 
 output_path = Path(__file__).resolve().parents[2] / "output"
 
-def standard_fit(data_cache = None, t_launch = None, t_s = None, t_e = None, t_fit=None, model_kwargs = None, njobs=4, multiprocessing=True, itermin=12, itermax=15, n_particles=512):
+def standard_fit(data_cache = None, t_launch = None, t_s = None, t_e = None, t_fit=None, model_kwargs = None, njobs=4, multiprocessing=True, itermin=12, itermax=15, n_particles=512, alternative_output_path = None):
 
     iter_i = 0  # keeps track of iterations
     hist_eps = []  # keeps track of epsilon values
@@ -117,6 +117,9 @@ def standard_fit(data_cache = None, t_launch = None, t_s = None, t_e = None, t_f
     random_seed = 42
     summary_type = "norm_rmse"
     fit_coord_system = "HEEQ"
+
+    if alternative_output_path != None:
+        output_path = alternative_output_path
 
     if not output_path.exists():
         output_path.mkdir(parents=True, exist_ok=True)
