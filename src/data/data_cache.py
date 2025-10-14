@@ -57,6 +57,9 @@ def get_data_cache(idd = None, mean_hours = 24, delta_t_days: int = 3, assumed_d
     else:
         print(f"No cache found for {idd}, loading data from source")
         data_cache_obj = DataCache(idd, mean_hours=mean_hours, delta_t_days=delta_t_days, assumed_duration_hours=assumed_duration_hours, icme_begin=icme_begin, mo_begin=mo_begin, mo_end=mo_end)
+        # create cache directory if it doesn't exist
+        cache_path.mkdir(parents=True, exist_ok=True)
+
         pickle.dump(data_cache_obj, open(file_cache_path, "wb"))
         print(f"Data cached for {idd} at {file_cache_path}")
     return data_cache_obj
