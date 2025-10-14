@@ -30,7 +30,7 @@ conda activate 3dcore-aswo
 
 ⸻
 
-⚙️ Configuration
+## ⚙️ Configuration
 
 Before running the model, make sure to **create the config.json file in the top level of the repository**.
 It should have the following format
