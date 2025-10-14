@@ -77,7 +77,7 @@ It should have the following format
 
 This configuration file contains all **paths to local data directories and resources**, such as spacecraft data and SPICE kernels. These paths must be chosen to match your local setup.
 
-If you do not have the files necessary for the spacecraft you want to use data from, you can download them [here](https://figshare.com/articles/dataset/In_Situ_Data_for_https_github_com_hruedisser_3DCORE-ASWO/30343477).
+If you do not have the files necessary for the spacecraft you want to use data from, you can download them [here](https://figshare.com/articles/dataset/In_Situ_Data_for_https_github_com_hruedisser_3DCORE-ASWO/30343477/2).
 
 The kernels needed for the coordinate transformations are available [here](https://figshare.com/articles/dataset/Kernels_for_https_github_com_hruedisser_sc-data-functions/30343831?file=58687090).
 
