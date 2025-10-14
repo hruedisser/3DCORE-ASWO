@@ -2,6 +2,7 @@ from pathlib import Path
 from src.data.data_cache import get_data_cache
 
 idds = {
+    "NOAA_ARCHIVE": "ICME_NOAA_ARCHIVE_CUSTOM_20210827_01",
     "STEREO_A": "ICME_STEREO_A_MOESTL_20240324_01", # this is the ID of the event we want to analyze
     "SOLO": "ICME_SOLO_MOESTL_20240323_01",
     "BEPI": 'ICME_BEPI_MOESTL_20240324_01'
