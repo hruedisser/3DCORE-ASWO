@@ -105,6 +105,8 @@ output_path = Path(__file__).resolve().parents[2] / "output"
 
 def standard_fit(data_cache = None, t_launch = None, t_s = None, t_e = None, t_fit=None, model_kwargs = None, njobs=4, multiprocessing=True, itermin=12, itermax=15, n_particles=512, alternative_output_path = None):
 
+    global output_path
+
     iter_i = 0  # keeps track of iterations
     hist_eps = []  # keeps track of epsilon values
     hist_time = []  # keeps track of time
