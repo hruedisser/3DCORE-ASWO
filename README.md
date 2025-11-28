@@ -27,6 +27,7 @@ conda env create -f environment.yml
 conda activate aswocore-env
 ```
 
+Alternatively, the required packages can also be installed from **requirements.txt**.
 
 ⸻
 
