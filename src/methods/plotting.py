@@ -32,10 +32,50 @@ standard_spacecraft_colors = {
     "bepi": "blue",
     "wind": "purple",
     "ace": "brown",
-    "soho": "grey"
+    "soho": "grey",
+    "noaa_rtsw": "black",
+    "noaa_archive": "black"
 }
 
-def plot_sun(ax, light_source=False, symsize_planet=110, sunscaler = 1.5):
+def propagate_model(data_cache, t_snap, t_launch):
+    extracted_row = extract_row(data_cache.row)
+    iparams = get_iparams_live(*extracted_row)
+    model_obj = ToroidalModel(t_launch, **iparams)
+    model_obj.generator()
+    model_obj.propagator(t_snap)
+
+    return model_obj
+
+
+def plot_configure(ax, **kwargs):
+    view_azim = kwargs.pop("view_azim", -25)
+    view_elev = kwargs.pop("view_elev", 25)
+    view_radius = kwargs.pop("view_radius", .5)
+    
+    ax.view_init(azim=view_azim, elev=view_elev)
+
+    ax.set_xlim([-view_radius, view_radius])
+    ax.set_ylim([-view_radius, view_radius])
+    #adjust scaling as matplotlib lacks automatic aspect ratio setting
+    ax.set_zlim([-view_radius*0.75, view_radius*0.75])
+
+    ax.set_axis_off()
+
+    return ax 
+
+def plot_shift(ax,extent,cx,cy,cz):
+    #shift center of plot
+    ax.set_xbound(cx-extent, cx+extent)
+    ax.set_ybound(cy-extent, cy+extent)
+    ax.set_zbound(cz-extent*0.75, cz+extent*0.75)
+
+    return ax
+
+def plot_sun(ax, **kwargs):
+
+    kwargs["sunscaler"] = kwargs.pop("sunscaler", 2)
+    kwargs["symsize_planet"] = kwargs.pop("symsize_planet", 110)
+    kwargs["light_source"] = kwargs.pop("light_source", False)
 
     # Plot Sun    
     scale = 695510 / 149597870.700 #Rs in km, AU in km
@@ -45,11 +85,14 @@ def plot_sun(ax, light_source=False, symsize_planet=110, sunscaler = 1.5):
     y = np.sin(u) * np.sin(v) * scale
     z = np.cos(v) * scale    
 
-    if light_source == True:
+    if kwargs["light_source"] == True:
         ls = LightSource(azdeg=320, altdeg=40)  
         ax.plot_surface(x, y, z, rstride=1, cstride=1, color='yellow', lightsource=ls, linewidth=0, antialiased=False, zorder=5)
     else:
-        ax.scatter3D(0, 0, 0, color='yellow', s=symsize_planet*sunscaler, label='Sun')
+        ax.scatter3D(0, 0, 0, color='yellow', s=kwargs["symsize_planet"] *kwargs["sunscaler"], label='Sun',
+        edgecolors="black",
+        linewidths=0.3
+        )
 
     return ax
 
@@ -69,7 +112,7 @@ def plot_planet(ax, data_cache, planet, color, symsize_planet, t_snap):
 
     return ax
 
-def plot_spacecraft(ax, data_cache, spacecraft, color, symsize_spacecraft, t_snap):
+def plot_spacecraft(ax, data_cache, spacecraft, color, symsize_spacecraft, t_snap, previous_days = 0, future_days = 0):
     
     pos_df = data_cache.body_data[spacecraft]
 
@@ -83,9 +126,19 @@ def plot_spacecraft(ax, data_cache, spacecraft, color, symsize_spacecraft, t_sna
 
         ax.scatter3D(x, y, z, color=color, s=symsize_spacecraft, label=spacecraft.upper(), zorder=10, marker='s')
 
+        if previous_days > 0:
+            start_time = t_snap - datetime.timedelta(days=previous_days)
+            mask = (pos_df['time'] >= start_time) & (pos_df['time'] <= t_snap)
+            ax.plot3D(pos_df.loc[mask, 'x'], pos_df.loc[mask, 'y'], pos_df.loc[mask, 'z'], color=color, lw=1, alpha=0.5, ls='--')
+            
+        if future_days > 0:
+            end_time = t_snap + datetime.timedelta(days=future_days)
+            mask = (pos_df['time'] >= t_snap) & (pos_df['time'] <= end_time)
+            ax.plot3D(pos_df.loc[mask, 'x'], pos_df.loc[mask, 'y'], pos_df.loc[mask, 'z'], color=color, lw=1, alpha=0.5)
+
     return ax
 
-def plot_cme(ax, obj, color, lw = 1):
+def plot_cme(ax, obj, color, lw = 1, alpha = .12):
 
     wf_model = obj.visualize_shape(iparam_index = 0)
 
@@ -95,7 +148,7 @@ def plot_cme(ax, obj, color, lw = 1):
     x = wf_array[:, :, 0].flatten()
     y = wf_array[:, :, 1].flatten()
     z = wf_array[:, :, 2].flatten()
-    ax.plot_wireframe(*wf_model.T, color=color, linewidth=lw, alpha=.15)
+    ax.plot_wireframe(*wf_model.T, color=color, linewidth=lw, alpha=alpha)
 
     return ax
 
@@ -191,7 +244,7 @@ def plot_longgrid(ax, fontsize=6, color = 'k', text = True, view_radius = 1):
     for r in radii:
         plot_circle(ax, r, color=color)
         if text == True:
-            ax.text(x = -0.085, y = r - 0.25, z = 0, s = f'{r} AU', fontsize = fontsize) 
+            ax.text(x = -0.085, y = r - 0.15, z = 0, s = f'{r} AU', fontsize = fontsize) 
 
     # Create data for the AU lines and their labels
     num_lines = 8
@@ -262,18 +315,18 @@ def plot_insitu_results(
     # Plot ensemble data if given
 
     if ensemble_data is not None:
-        ensemble_data = ensemble_data[reference_frame]
+        ensemble_data_selected = ensemble_data[reference_frame].copy()
         
-        ensemble_data[np.where(ensemble_data == 0)] = np.nan
+        ensemble_data_selected[np.where(ensemble_data_selected == 0)] = np.nan
 
-        ensemble_data = ensemble_data[time_mask]
+        ensemble_data_selected = ensemble_data_selected[time_mask]
 
         perc = 0.95
 
-        b_s2p = np.nanquantile(ensemble_data, 0.5 + perc/2., axis=1)
-        b_s2n = np.nanquantile(ensemble_data, 0.5 - perc/2., axis=1)
+        b_s2p = np.nanquantile(ensemble_data_selected, 0.5 + perc/2., axis=1)
+        b_s2n = np.nanquantile(ensemble_data_selected, 0.5 - perc/2., axis=1)
 
-        b_t = np.sqrt(np.sum(ensemble_data**2, axis=2))
+        b_t = np.sqrt(np.sum(ensemble_data_selected**2, axis=2))
 
         b_ts2p = np.nanquantile(b_t, 0.5 + perc/2., axis=1)
         b_ts2n = np.nanquantile(b_t, 0.5 - perc/2., axis=1)
@@ -356,71 +409,87 @@ def plot_insitu_results(
 def plot_3d_results(
         data_caches = [],
         t_snap = None,
-        spacecraft = {"psp": "black", "solo":"coral", "sta":"darkred", "stb":"darkgreen", "bepi":"blue"}, 
-        planets = {"earth":"mediumseagreen", "mercury":"slategrey", "venus":"darkgoldenrod", "mars":"red"}, 
-        symsize_planet=110, 
-        symsize_spacecraft=55,
-        figsize=(10,10),
-        fontsize=12,
-        t_launch = None,
-        light_source = False,
-        sunscaler = 3,
-        add_field = True,
-        view_azim = -25,
-        view_elev = 25,
-        view_radius = .5,
-        view_legend = True,
-        long_grid = True
-        ):
+        **kwargs
+    ):
 
-    fig = plt.figure(1, figsize=figsize)
+    kwargs["spacecraft"] = kwargs.pop("spacecraft", {"psp": "black", "solo":"coral", "sta":"darkred", "stb":"darkgreen", "bepi":"blue"})
+    kwargs["planets"] = kwargs.pop("planets", {"earth":"mediumseagreen", "mercury":"slategrey", "venus":"darkgoldenrod", "mars":"red"})
+    kwargs["symsize_planet"] = kwargs.pop("symsize_planet", 110)
+    kwargs["symsize_spacecraft"] = kwargs.pop("symsize_spacecraft", 55)
+    kwargs["figsize"] = kwargs.pop("figsize", (10,10))
+    kwargs["fontsize"] = kwargs.pop("fontsize", 12)
+    kwargs["t_launch"] = kwargs.pop("t_launch", None)
+    kwargs["light_source"] = kwargs.pop("light_source", False)
+    kwargs["sunscaler"] = kwargs.pop("sunscaler", 2)
+    kwargs["add_field"] = kwargs.pop("add_field", True)
+    kwargs["view_azim"] = kwargs.pop("view_azim", -25)
+    kwargs["view_elev"] = kwargs.pop("view_elev", 25)
+    kwargs["view_radius"] = kwargs.pop("view_radius", .5)
+    kwargs["view_legend"] = kwargs.pop("view_legend", True)
+    kwargs["long_grid"] = kwargs.pop("long_grid", True)
+
+    fig = plt.figure(1, figsize=kwargs["figsize"]) #, layout="constrained")
 
     ax = fig.add_subplot(111, projection='3d')
 
-    ax.view_init(elev=view_elev, azim=view_azim)
-
-    ax.set_xlim([-view_radius, view_radius])
-    ax.set_ylim([-view_radius, view_radius])
-    ax.set_zlim([-view_radius, view_radius])
-
-    ax.set_axis_off()
+    ax = plot_configure(ax, **kwargs)
 
 
     # Plot Sun 
-    ax = plot_sun(ax, light_source=light_source, symsize_planet=symsize_planet, sunscaler=sunscaler)
+    ax = plot_sun(ax, **kwargs)
 
-    for planet, color in planets.items():
+    for planet, color in kwargs["planets"].items():
         # Plot planet
-        ax = plot_planet(ax, data_caches[0], planet, color, symsize_planet, t_snap)
+        ax = plot_planet(ax, data_caches[0], planet, color, kwargs["symsize_planet"], t_snap)
 
-    for sc, color in spacecraft.items():
+    for sc, color in kwargs["spacecraft"].items():
         # Plot spacecraft
-        ax = plot_spacecraft(ax, data_caches[0], sc, color, symsize_spacecraft, t_snap)
+        ax = plot_spacecraft(ax, data_caches[0], sc, color, kwargs["symsize_spacecraft"], t_snap)
 
     for data_cache in data_caches:
-        extracted_row = extract_row(data_cache.row)
-        iparams = get_iparams_live(*extracted_row)
-        model_obj = ToroidalModel(t_launch, **iparams)
-        model_obj.generator()
-        model_obj.propagator(t_snap)
+
+        model_obj = propagate_model(data_cache, t_snap, kwargs["t_launch"])
 
         print(f"Plotting {data_cache.spacecraft} CME")
 
-        if data_cache.spacecraft in spacecraft.keys():
-            color = spacecraft[data_cache.spacecraft]
+        if data_cache.spacecraft in kwargs["spacecraft"].keys():
+            color = kwargs["spacecraft"][data_cache.spacecraft]
         else:
             color = standard_spacecraft_colors[data_cache.spacecraft]
         
         ax = plot_cme(ax, model_obj, color)
 
-        if add_field == True:
+        if kwargs["add_field"] == True:
             ax = plot_3dcore_field(ax, model_obj, color=color, alpha = .95, lw = .8)
 
-    if long_grid == True:
-        ax = plot_longgrid(ax, fontsize=fontsize, text=True, view_radius = view_radius)
+    if kwargs["long_grid"] == True:
+        ax = plot_longgrid(ax, fontsize=kwargs["fontsize"], text=True, view_radius = kwargs["view_radius"])
+    
+    # # --- Auto-adjust axis limits to data ---
+    # ax.autoscale(enable=True, tight=True)
 
-    if view_legend == True:
-        ax.legend(loc='best', fontsize = fontsize)
+    # # Get limits from data
+    # x_limits = ax.get_xlim3d()
+    # y_limits = ax.get_ylim3d()
+    # z_limits = ax.get_zlim3d()
+
+    # # calcualate rations between limits
+    # x_range = x_limits[1] - x_limits[0]
+    # y_range = y_limits[1] - y_limits[0]
+    # z_range = z_limits[1] - z_limits[0]
+
+    # max_range = max(x_range, y_range, z_range)
+
+    # proportional_x_range = x_range / max_range
+    # proportional_y_range = y_range / max_range
+    # proportional_z_range = z_range / max_range
+
+    # ax.set_box_aspect([proportional_x_range, proportional_y_range, proportional_z_range])
+
+    # ax.set_axis_off()
+
+    if kwargs["view_legend"] == True:
+        ax.legend(loc='best', fontsize = kwargs["fontsize"])
 
     fig.tight_layout()
 
