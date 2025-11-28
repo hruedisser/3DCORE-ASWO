@@ -270,6 +270,10 @@ def get_data_from_file_name(file_name, data_begin, data_end, delta = 60):
                 heeq_file = None
             if "gsm" in f:
                 gsm_file = None
+
+    if rtn_file is None and heeq_file is None and gsm_file is None:
+
+        raise FileNotFoundError(f"No files found, make sure at least one of the files exists AND contains the coordinate system in its name (gse, gsm, heeq, rtn).")
     
     print(f"Loading data from {data_path}")
 
@@ -422,5 +426,9 @@ def get_data_from_file_name(file_name, data_begin, data_end, delta = 60):
         pos_data = pos_data / 1.495978707E8  # convert km to AU
 
     v_data = df_heeq["vt"] if "vt" in df_heeq.columns else None
+
+    # check if there are NaNs in the position data
+    if np.isnan(pos_data).any():
+        raise Warning("Position data contains NaNs. Fitting might not be possible.")
     
     return b_data, pos_data, t_data, body_data, v_data
