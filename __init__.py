@@ -16,7 +16,7 @@ sys.modules["numpy.rec"] = numpy_rec
 # This file is in: src/3DCORE-ASWO/__init__.py
 # Inner submodule is in: src/3DCORE-ASWO/src/methods/sc-data-functions
 root = Path(__file__).resolve().parents[0]  # points to 3DCORE-ASWO/src
-submodule_path = root / "methods" / "src" / "sc-data-functions"
+submodule_path = root / "src" / "methods" / "sc-data-functions"
 
 # Config files
 aswo_config_path = Path(__file__).resolve().parent / "config.json"
