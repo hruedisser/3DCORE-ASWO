@@ -259,7 +259,7 @@ def load_from_df(dataframe, reference_frame = "GSM"):
         )
     )
 
-    t_data = pd.to_datetime(df_rtn['time']).to_list()
+    t_data = pd.to_datetime(df_rtn['time'], utc=False).dt.tz_localize(None).to_list()
 
     pos_data = np.column_stack(
         (
