@@ -368,15 +368,7 @@ class DataCache(object):
     
 
 class DataCacheFromDataFrame(object):
-    def __init__(self, dataframe: pd.DataFrame, reference_frame: str = 'GSM', mean_hours: int = 48):
+    def __init__(self, dataframe: pd.DataFrame, reference_frame: str = 'GSM'):
 
 
         self.b_data, self.pos_data, self.t_data, self.v_data = load_from_df(dataframe, reference_frame)
-
-        if self.v_data is not None:
-            t_mask = (np.array(self.t_data) >= self.icme_begin - datetime.timedelta(hours=mean_hours)) & (np.array(self.t_data) < self.icme_begin)
-                
-            v_before_event = self.v_data[t_mask]
-            self.v_mean_before_event = np.mean(v_before_event)
-        else:
-            self.v_mean_before_event = None
