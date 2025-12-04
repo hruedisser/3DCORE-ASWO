@@ -99,7 +99,7 @@ def starmap(func, args):
 
 import multiprocess as mp  # ing as mp
 
-manager = mp.Manager()
+#manager = mp.Manager()
 processes = []
 
 
@@ -179,9 +179,13 @@ def standard_fit(data_cache = None, t_launch = None, t_s = None, t_e = None, t_f
 
     if multiprocessing == True:
 
-        # global mpool
-        mpool = mp.Pool(processes=njobs)  # initialize Pool for multiprocessing
+        ctx = mp.get_context("spawn")
+        mpool = ctx.Pool(processes=njobs)  # initialize Pool for multiprocessing
         processes.append(mpool)
+
+        # global mpool
+        # mpool = mp.Pool(processes=njobs)  # initialize Pool for multiprocessing
+        # processes.append(mpool)
 
     ##################################
     #### Initializing fitting data ###
