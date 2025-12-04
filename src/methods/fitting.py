@@ -123,12 +123,14 @@ def standard_fit(data_cache = None, t_launch = None, t_s = None, t_e = None, t_f
     fit_coord_system = "HEEQ"
 
     if alternative_output_path != None:
-        output_path = alternative_output_path
+        output_path_fit = alternative_output_path
+        output_folder = output_path_fit
+    else:
+        output_path_fit = output_path
+        output_folder = output_path_fit / data_cache.idd
 
     if not output_path.exists():
-        output_path.mkdir(parents=True, exist_ok=True)
-
-    output_folder = output_path / data_cache.idd
+        output_path_fit.mkdir(parents=True, exist_ok=True)
 
     if not output_folder.exists():
         output_folder.mkdir(parents=True, exist_ok=True)
@@ -454,7 +456,8 @@ def round_dataframe(df):
 
 def load_ensemble(output_folder = None, fit_file = None, data_cache = None):
 
-    output_folder = output_path / data_cache.idd
+    if output_folder == None:
+        output_folder = output_path / data_cache.idd
 
     fit_file_name = fit_file.name.split("/")[-1]
 
