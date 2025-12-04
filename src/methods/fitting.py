@@ -105,7 +105,7 @@ processes = []
 
 output_path = Path(__file__).resolve().parents[2] / "output"
 
-def standard_fit(data_cache = None, t_launch = None, t_s = None, t_e = None, t_fit=None, model_kwargs = None, njobs=4, multiprocessing=True, itermin=12, itermax=15, n_particles=512, alternative_output_path = None, time_limit = None):
+def standard_fit(data_cache = None, t_launch = None, t_s = None, t_e = None, t_fit=None, model_kwargs = None, njobs=4, multiprocessing=True, itermin=12, itermax=15, n_particles=512, alternative_output_path = None, time_limit = None, alternative_name = None):
 
     global output_path
 
@@ -438,7 +438,11 @@ def standard_fit(data_cache = None, t_launch = None, t_s = None, t_e = None, t_f
                 "epses": epses_temp,
             }
 
-            output_file = output_folder / Path("{0:02d}.pickle".format(iter_i - 1))
+            if alternative_name == None:
+                output_file = output_folder / Path("{0:02d}.pickle".format(iter_i - 1))
+            else:
+                output_file = output_folder / Path("{alternative_name}" + "{0:02d}.pickle".format(iter_i - 1))
+
             
             with open(output_file, "wb") as fh:
                 pickle.dump(extra_args, fh)
