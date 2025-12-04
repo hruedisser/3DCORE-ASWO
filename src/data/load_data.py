@@ -96,7 +96,11 @@ from sc_data_functions.data_frame_transforms import (
     GSM_to_RTN,
     RTN_to_GSM,
     RTN_to_HEEQ,
-    GSE_to_GSM
+    GSE_to_GSM,
+    GSM_to_GSE_mag_components,
+    GSE_to_HEEQ_mag_components,
+    HEEQ_to_RTN_mag_components,
+
 )
 
 # === Load file_names from JSON config ===
@@ -196,6 +200,87 @@ def load_wind(data_begin, data_end):
     file_name = file_names['wind']
     b_data, pos_data, t_data, body_data, v_data = get_data_from_file_name(file_name, data_begin, data_end)
     return b_data, pos_data, t_data, body_data, v_data
+
+def load_from_df(dataframe, reference_frame = "GSM"):
+
+    if reference_frame == "GSM":
+        df_gsm = dataframe
+        times = df_gsm['time']
+
+        df_gse = df_gsm.copy()
+        bx_gse, by_gse, bz_gse = GSM_to_GSE_mag_components(df_gsm["bx"], df_gsm["by"], df_gsm["bz"], times)
+        df_gse['bx'] = bx_gse
+        df_gse['by'] = by_gse
+        df_gse['bz'] = bz_gse
+        print(f"Converted GSM to GSE data")
+
+        df_heeq = df_gse.copy()
+        bx_heeq, by_heeq, bz_heeq = GSE_to_HEEQ_mag_components(df_gse["bx"], df_gse["by"], df_gse["bz"], times)
+        df_heeq['bx'] = bx_heeq
+        df_heeq['by'] = by_heeq
+        df_heeq['bz'] = bz_heeq
+        print(f"Converted GSM to HEEQ data")
+
+        df_rtn = df_heeq.copy()
+        bx_rtn, by_rtn, bz_rtn = HEEQ_to_RTN_mag_components(df_heeq["bx"], df_heeq["by"], df_heeq["bz"],df_heeq["x"], df_heeq["y"], df_heeq["z"])
+        df_rtn['bx'] = bx_rtn
+        df_rtn['by'] = by_rtn
+        df_rtn['bz'] = bz_rtn
+        print(f"Converted HEEQ to RTN data")
+
+    else:
+        raise ValueError(f"Reference frame {reference_frame} not supported for load_from_df.")
+
+
+
+    b_data = {}
+
+    b_data["RTN"] = np.column_stack(
+        (
+            df_rtn['bx'],
+            df_rtn['by'],
+            df_rtn['bz']
+        )
+    )
+    
+    b_data["HEEQ"] = np.column_stack(
+        (
+            df_heeq['bx'],
+            df_heeq['by'],
+            df_heeq['bz']
+        )
+    )
+
+    b_data["GSM"] = np.column_stack(
+        (
+            df_gsm['bx'],
+            df_gsm['by'],
+            df_gsm['bz']
+        )
+    )
+
+    t_data = pd.to_datetime(df_rtn['time']).to_list()
+
+    pos_data = np.column_stack(
+        (
+            df_heeq['x'],
+            df_heeq['y'],
+            df_heeq['z']
+        )
+    )
+
+    # check if pos_data is in AU or km (if all positions are < 50, assume AU)
+    if np.all(np.abs(pos_data) > 50):
+        pos_data = pos_data / 1.495978707E8  # convert km to AU
+
+    v_data = df_heeq["vt"] if "vt" in df_heeq.columns else None
+
+    # check if there are NaNs in the position data
+    if np.isnan(pos_data).any():
+        raise Warning("Position data contains NaNs. Fitting might not be possible.")
+    
+    return b_data, pos_data, t_data, v_data
+
     
 
 def get_data_from_file_name(file_name, data_begin, data_end, delta = 60):
@@ -294,7 +379,7 @@ def get_data_from_file_name(file_name, data_begin, data_end, delta = 60):
             df_rtn = df_rtn[(df_rtn['time'] >= data_begin) & (df_rtn['time'] <= data_end)]
         else:
             df_rtn = GSM_to_RTN(df_gsm)
-            print(f"Converted HEEQ to RTN data")
+            print(f"Converted GSM to RTN data")
 
         if heeq_file is not None:
             df_heeq = pickle.load(open(Path(data_path, heeq_file), "rb"))
@@ -303,7 +388,7 @@ def get_data_from_file_name(file_name, data_begin, data_end, delta = 60):
             df_heeq = df_heeq[(df_heeq['time'] >= data_begin) & (df_heeq['time'] <= data_end)]
         else:
             df_heeq = RTN_to_HEEQ(df_rtn)
-            print(f"Converted GSM to HEEQ data")
+            print(f"Converted RTN to HEEQ data")
 
     elif heeq_file is not None:
         df_heeq = pickle.load(open(Path(data_path, heeq_file), "rb"))

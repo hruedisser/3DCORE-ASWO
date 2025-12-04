@@ -26,6 +26,7 @@ from .load_data import (
     load_ulysses,
     load_vex,
     load_wind,
+    load_from_df,
 )
 
 sns.set_context("talk")     
@@ -365,3 +366,9 @@ class DataCache(object):
 
         return fig, ax
     
+
+class DataCacheFromDataFrame(object):
+    def __init__(self, dataframe: pd.DataFrame, reference_frame: str = 'GSM'):
+
+
+        self.b_data, self.pos_data, self.t_data, self.v_data = load_from_df(dataframe, reference_frame)
