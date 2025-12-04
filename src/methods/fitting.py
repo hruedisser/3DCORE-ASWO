@@ -5,6 +5,8 @@ from ..methods.data import FittingData
 from ..methods.abc_smc import abc_smc_worker
 import importlib
 
+import time
+
 from pathlib import Path
 import sys
 import json
@@ -103,7 +105,7 @@ processes = []
 
 output_path = Path(__file__).resolve().parents[2] / "output"
 
-def standard_fit(data_cache = None, t_launch = None, t_s = None, t_e = None, t_fit=None, model_kwargs = None, njobs=4, multiprocessing=True, itermin=12, itermax=15, n_particles=512, alternative_output_path = None):
+def standard_fit(data_cache = None, t_launch = None, t_s = None, t_e = None, t_fit=None, model_kwargs = None, njobs=4, multiprocessing=True, itermin=12, itermax=15, n_particles=512, alternative_output_path = None, time_limit = None):
 
     global output_path
 
@@ -215,7 +217,15 @@ def standard_fit(data_cache = None, t_launch = None, t_s = None, t_e = None, t_f
                 if hist_eps[-1] < epsgoal:
                     print("Fitting terminated, target RMSE reached: eps < ", epsgoal)
                     kill_flag = True
-                    break    
+                    break
+
+            print("Minutes passed: ", time.gmtime(np.sum(hist_time)).tm_min)
+
+            if time_limit != None:
+                if time.gmtime(np.sum(hist_time)).tm_min >= time_limit:
+                    print("Fitting terminated, time limit reached: ", time_limit, " minutes")
+                    kill_flag = True
+                    break   
                     
             print("Running iteration " + str(iter_i))        
                     
@@ -318,6 +328,15 @@ def standard_fit(data_cache = None, t_launch = None, t_s = None, t_e = None, t_f
                     f"Step {iter_i}:{sub_iter_i} with ({pcount}/{n_particles}) particles",
                     end="\r",
                 )
+
+                time_passed = time.time() - timer_iter
+
+                if time_limit != None:
+                    if time.gmtime(np.sum(hist_time) + time_passed).tm_min > time_limit:
+                        print("Fitting terminated, time limit reached: ", time_limit, " minutes")
+                        kill_flag = True
+                        break
+
                 # Flush the output buffer to update the line immediately
 
                 if pcount > n_particles:
