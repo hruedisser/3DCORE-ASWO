@@ -514,6 +514,6 @@ def get_data_from_file_name(file_name, data_begin, data_end, delta = 60):
 
     # check if there are NaNs in the position data
     if np.isnan(pos_data).any():
-        raise Warning("Position data contains NaNs. Fitting might not be possible.")
+        print("Position data contains NaNs. Fitting might not be possible.")
     
     return b_data, pos_data, t_data, body_data, v_data
