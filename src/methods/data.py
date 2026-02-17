@@ -139,6 +139,8 @@ class FittingData(object):
                     [int((_.timestamp() - dt[0].timestamp()) * kdt) for _ in dt]
                 )
 
+                breakpoint()
+
                 self.psd_dt.append(fT)
                 self.psd_fft.append(fS)
         elif noise_model == "gaussian":

@@ -91,7 +91,8 @@ def plot_sun(ax, **kwargs):
     else:
         ax.scatter3D(0, 0, 0, color='yellow', s=kwargs["symsize_planet"] *kwargs["sunscaler"], label='Sun',
         edgecolors="black",
-        linewidths=0.3
+        linewidths=0.3,
+        zorder=100
         )
 
     return ax

@@ -108,6 +108,66 @@ class ToroidalModel(SimulationBlackBox):
                 raise NotImplementedError
         else:
             raise NotImplementedError
+        
+    def impact_parameter(
+        self,
+        pos: np.ndarray,
+
+    ):
+        """
+        The perpendicular distance of a trajectory from the flux rope axis may be expressed as the impact parameter Y0 defined as 0 if the trajectory intercepts the central axis of the flux rope, to 1 if it grazes the outer edge.
+        """
+
+        q_tmp = np.zeros((len(self.iparams_arr), 3))
+
+        if self.shape_model == "thin_torus":
+            thin_torus_sq(pos, self.iparams_arr, self.sparams_arr, self.qs_sq, q_tmp)
+        
+        return q_tmp[0][0]
+    
+    def axis_to_boundary_distance(
+        self,
+        psi: float,
+        phi: float,
+        index: int = 0,
+    ) -> float:
+        
+        """
+        Distance from the flux-rope central axis (r=0) to the outer boundary (r=1)
+        at given angles (psi, phi), using the thin_torus geometry.
+
+        Parameters
+        ----------
+        psi : float or array
+            Toroidal angle (q[1]) in radians.
+        phi : float or array
+            Poloidal angle (q[2]) in radians.
+        index : int
+            Ensemble/run index.
+
+        Returns
+        -------
+        np.ndarray
+            Distance axis->boundary in the same units as s (typically AU).
+        """
+    
+        q = np.zeros((3,), dtype=self.dtype)
+        q[0] = 1.0  # r=1 for boundary
+        q[1] = psi
+        q[2] = phi
+
+        s = np.zeros((3,), dtype=self.dtype)
+
+        thin_torus_sq(
+            q,
+            self.iparams_arr[index],
+            self.sparams_arr[index],
+            self.qs_sq[index],
+            s,
+        )
+
+        return np.linalg.norm(s)
+
 
     def visualize_shape(
         self, iparam_index: int = 0, resolution: int = 10
@@ -220,6 +280,99 @@ class ToroidalModel(SimulationBlackBox):
             return fl, qc
         else:
             return fl
+        
+    def central_axis_line(
+        self,
+        index: int = 0,
+        n_samples: int = 4000,
+        psi_min: float = 0.0,
+        psi_max: float = 2 * np.pi
+    ) -> np.ndarray:
+    
+        """
+        Compute the torus central axis in (s) coordinates.
+
+        The central axis is defined by q = (r=0, psi, phi=0) for psi in [0,2*pi].
+
+        Parameters
+        ----------
+        index : int, optional
+            Model run index, by default 0.
+        n_samples : int
+            Number of samples along the central axis, by default 4000.
+        psi_min : float
+            Minimum value of psi, by default 0.0.
+        psi_max : float
+            Maximum value of psi, by default 2 * np.pi.
+
+        Returns
+        -------
+        np.ndarray
+            Central axis points in (s) coordinates.
+        """
+
+        # sample psi values
+        psi = np.linspace(psi_min, psi_max, n_samples, dtype=self.dtype)
+
+        # allocate arrays
+        q = np.zeros((n_samples, 3), dtype=self.dtype)
+        s = np.zeros((n_samples, 3), dtype=self.dtype)
+
+        # central axis: r=0, phi=0
+        q[:, 0] = 0.0
+        q[:, 1] = psi
+        q[:, 2] = 0.0
+
+        # map each q -> s
+        tmp = np.empty((3,), dtype=self.dtype)
+        for i in range(n_samples):
+            thin_torus_qs(
+                q[i],
+                self.iparams_arr[index],
+                self.sparams_arr[index],
+                self.qs_qs[index],
+                tmp,
+            )
+            s[i] = tmp
+        
+        return s
+    
+    def central_axis_length(
+        self,
+        index: int = 0,
+        n_samples: int = 4000,
+        psi_min: float = 0.0,
+        psi_max: float = 2 * np.pi
+    ) -> float:
+        """
+        Compute length of the torus central axis in (s) coordinates.
+
+        The central axis is defined by q = (r=0, psi, phi=0) for psi in [0,2*pi].
+
+        Parameters
+        ----------
+        index : int, optional
+            Model run index, by default 0.
+        n_samples : int
+            Number of samples along the central axis, by default 4000.
+        psi_min : float
+            Minimum value of psi, by default 0.0.
+        psi_max : float
+            Maximum value of psi, by default 2 * np.pi.
+
+        Returns
+        -------
+        float
+            Approximate central axis length (same units as s).
+        """
+
+        s = self.central_axis_line(index=index, n_samples=n_samples, psi_min=psi_min, psi_max=psi_max)
+
+        # compute length along the central axis
+        ds = np.linalg.norm(np.diff(s, axis=0), axis=1)
+        length = float(np.sum(ds))
+
+        return length
 
 
 @guvectorize(
