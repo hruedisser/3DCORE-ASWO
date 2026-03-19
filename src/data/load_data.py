@@ -517,3 +517,7 @@ def get_data_from_file_name(file_name, data_begin, data_end, delta = 60):
         print("Position data contains NaNs. Fitting might not be possible.")
     
     return b_data, pos_data, t_data, body_data, v_data
+
+
+def exported_HEEQ_to_RTN_mag_components(bx_heeq, by_heeq, bz_heeq, x_heeq, y_heeq, z_heeq):
+    return HEEQ_to_RTN_mag_components(bx_heeq, by_heeq, bz_heeq, x_heeq, y_heeq, z_heeq)

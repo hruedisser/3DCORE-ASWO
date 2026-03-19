@@ -70,7 +70,7 @@
         "index": 7,
         "name": "velocity",
         "distribution": "uniform",
-        "maximum": 1800,
+        "maximum": 2400,
         "minimum": 250,
         "boundary": "continuous",
         "label": "v_0"
@@ -109,7 +109,7 @@
         "index": 11,
         "name": "axial strength",
         "distribution": "uniform",
-        "maximum": 80,
+        "maximum": 120,
         "minimum": 5,
         "boundary": "continuous",
         "label": "b_{1au}"

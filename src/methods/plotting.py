@@ -315,6 +315,8 @@ def plot_insitu_results(
 
     # Plot ensemble data if given
 
+    c0 = 'k'
+    
     if ensemble_data is not None:
         ensemble_data_selected = ensemble_data[reference_frame].copy()
         
@@ -329,6 +331,8 @@ def plot_insitu_results(
 
         b_t = np.sqrt(np.sum(ensemble_data_selected**2, axis=2))
 
+        b_m = np.nanmean(ensemble_data_selected, axis=1)
+
         b_ts2p = np.nanquantile(b_t, 0.5 + perc/2., axis=1)
         b_ts2n = np.nanquantile(b_t, 0.5 - perc/2., axis=1)
 
@@ -337,12 +341,20 @@ def plot_insitu_results(
         ax.fill_between(t_data, b_s2n[:,1], b_s2p[:,1], color=colors[1], alpha=0.25)
         ax.fill_between(t_data, b_s2n[:,2], b_s2p[:,2], color=colors[2], alpha=0.25)
 
+        bx, by, bz = b_m[:,0], b_m[:,1], b_m[:,2]
+
+        ax.plot(t_data, np.sqrt(bx**2 + by**2 + bz**2), color=c0, lw=lw_best, linestyle="dashed")
+
+        ax.plot(t_data, bx, color=colors[0], alpha=1, lw=lw_best, linestyle="dashed")
+        ax.plot(t_data, by, color=colors[1], alpha=1, lw=lw_best, linestyle="dashed")
+        ax.plot(t_data, bz, color=colors[2], alpha=1, lw=lw_best, linestyle="dashed")   
+
 
 
     # Plot insitu data
 
     b_data = b_data[time_mask]
-    c0 = 'k'
+
 
     if prediction:
 
