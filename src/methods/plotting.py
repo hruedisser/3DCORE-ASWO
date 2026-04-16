@@ -21,7 +21,8 @@ sns.set_style("ticks",{'grid.linestyle': '--'})
 reference_frame_names = {
     "HEEQ": ['|B|', 'B$_X$', 'B$_Y$', 'B$_Z$'],
     "GSM": ['|B|', 'B$_X$', 'B$_Y$', 'B$_Z$'],
-    "RTN": ['|B|', 'B$_R$', 'B$_T$', 'B$_N$']
+    "RTN": ['|B|', 'B$_R$', 'B$_T$', 'B$_N$'],
+    "GSE": ['|B|', 'B$_X$', 'B$_Y$', 'B$_Z$']
 }
 
 standard_spacecraft_colors = {

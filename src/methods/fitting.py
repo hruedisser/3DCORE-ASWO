@@ -80,11 +80,12 @@ with patch("builtins.open", _fake_open), patch.object(pathlib.Path, "open", _fak
 # --- Import functions from the now-patched submodule ---
 from sc_data_functions.data_frame_transforms import (
     HEEQ_to_RTN_mag_components,
-    RTN_to_GSM_components,
+    HEEQ_to_GSE_mag_components,
+    GSE_to_GSM_mag_components
 )
 
 import time
-from tqdm import tqdm
+from tqdm.auto import tqdm
 import sys
 from pathlib import Path
 
@@ -487,20 +488,25 @@ def load_ensemble(output_folder = None, fit_file = None, data_cache = None):
         # Preallocate arrays
         ensemble_RTN = np.empty_like(ensemble_HEEQ)
         ensemble_GSM = np.empty_like(ensemble_HEEQ)
+        ensemble_GSE = np.empty_like(ensemble_HEEQ)
 
+        for k in tqdm(range(ensemble_HEEQ.shape[1]), desc="Calculating ensemble in different coordinate systems"):
 
-        for k in tqdm(range(ensemble_HEEQ.shape[1])):
             bx, by, bz = ensemble_HEEQ[:,k,0], ensemble_HEEQ[:,k,1], ensemble_HEEQ[:,k,2]
 
             bx_rtn, by_rtn, bz_rtn = HEEQ_to_RTN_mag_components(bx, by, bz, x, y, z)
-            bx_gsm, by_gsm, bz_gsm = RTN_to_GSM_components(bx_rtn, by_rtn, bz_rtn, x, y, z, data_cache.t_data)
+            bx_gse, by_gse, bz_gse = HEEQ_to_GSE_mag_components(bx, by, bz, data_cache.t_data)
+            bx_gsm, by_gsm, bz_gsm = GSE_to_GSM_mag_components(bx_gse, by_gse, bz_gse, data_cache.t_data)
+
 
             ensemble_RTN[:,k,0], ensemble_RTN[:,k,1], ensemble_RTN[:,k,2] = bx_rtn, by_rtn, bz_rtn
+            ensemble_GSE[:,k,0], ensemble_GSE[:,k,1], ensemble_GSE[:,k,2] = bx_gse, by_gse, bz_gse
             ensemble_GSM[:,k,0], ensemble_GSM[:,k,1], ensemble_GSM[:,k,2] = bx_gsm, by_gsm, bz_gsm
 
         ensemble_data = {
             "HEEQ": ensemble_HEEQ,
             "RTN": ensemble_RTN,
+            "GSE": ensemble_GSE,
             "GSM": ensemble_GSM
         }
 

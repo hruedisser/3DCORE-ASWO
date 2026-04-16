@@ -92,14 +92,11 @@ with patch("builtins.open", _fake_open), patch.object(pathlib.Path, "open", _fak
 
 # --- Import functions from the now-patched submodule ---
 from sc_data_functions.data_frame_transforms import (
-    HEEQ_to_RTN,
-    GSM_to_RTN,
-    RTN_to_GSM,
-    RTN_to_HEEQ,
-    GSE_to_GSM,
     GSM_to_GSE_mag_components,
     GSE_to_HEEQ_mag_components,
     HEEQ_to_RTN_mag_components,
+    HEEQ_to_GSE_mag_components,
+    GSE_to_GSM_mag_components
 
 )
 
@@ -281,6 +278,54 @@ def load_from_df(dataframe, reference_frame = "GSM"):
     
     return b_data, pos_data, t_data, v_data
 
+def HEEQ_to_RTN_wrapper(df_heeq):
+    df = df_heeq.copy()
+    bx, by, bz = HEEQ_to_RTN_mag_components(
+        df["bx"].values,
+        df["by"].values,
+        df["bz"].values,
+        df["x"].values,
+        df["y"].values,
+        df["z"].values,
+    )
+    df["bx"], df["by"], df["bz"] = bx, by, bz
+    return df
+
+
+def HEEQ_to_GSE_wrapper(df_heeq):
+    df = df_heeq.copy()
+    bx, by, bz = HEEQ_to_GSE_mag_components(
+        df["bx"].values,
+        df["by"].values,
+        df["bz"].values,
+        pd.to_datetime(df["time"]).to_list(),
+    )
+    df["bx"], df["by"], df["bz"] = bx, by, bz
+    return df
+
+
+def GSE_to_HEEQ_wrapper(df_gse):
+    df = df_gse.copy()
+    bx, by, bz = GSE_to_HEEQ_mag_components(
+        df["bx"].values,
+        df["by"].values,
+        df["bz"].values,
+        pd.to_datetime(df["time"]).to_list(),
+    )
+    df["bx"], df["by"], df["bz"] = bx, by, bz
+    return df
+
+
+def GSE_to_GSM_wrapper(df_gse):
+    df = df_gse.copy()
+    bx, by, bz = GSE_to_GSM_mag_components(
+        df["bx"].values,
+        df["by"].values,
+        df["bz"].values,
+        pd.to_datetime(df["time"]).to_list(),
+    )
+    df["bx"], df["by"], df["bz"] = bx, by, bz
+    return df
     
 
 def get_data_from_file_name(file_name, data_begin, data_end, delta = 60):
@@ -321,181 +366,140 @@ def get_data_from_file_name(file_name, data_begin, data_end, delta = 60):
 
         body_data[obj] = obj_df[(obj_df['time'] >= data_begin - pd.Timedelta(days=delta)) & (obj_df['time'] <= data_end + pd.Timedelta(days=delta))]
 
+    
+    def _replace_coord(name, target):
+        for coord in ["rtn", "heeq", "gse", "gsm", "sceq"]:
+            if coord in name:
+                return name.replace(coord, target)
+        return None
 
-    if "rtn" in file_name:
-        rtn_file = file_name
-        heeq_file = file_name.replace("rtn", "heeq")
-        gsm_file = file_name.replace("rtn", "gsm")
-    if "sceq" in file_name:
-        rtn_file = file_name
-        heeq_file = file_name.replace("sceq", "heeq")
-        gsm_file = file_name.replace("sceq", "gsm")
+    def _load_df(fname, label):
+        df = pickle.load(open(Path(data_path, fname), "rb"))
+        df = pd.DataFrame(df[0])
+        df = df[(df["time"] >= data_begin) & (df["time"] <= data_end)]
+        if df.empty:
+            raise ValueError(
+                f"{label} data is empty after filtering for the given date range "
+                f"{data_begin} to {data_end}. Please check the data file."
+            )
+        print(f"Loaded {label} data from {fname}")
+        return df
+    
+
+    # infer related filenames
+    heeq_file = _replace_coord(file_name, "heeq")
+    rtn_file  = _replace_coord(file_name, "rtn")
+    gse_file  = _replace_coord(file_name, "gse")
+    gsm_file  = _replace_coord(file_name, "gsm")
+
     if "heeq" in file_name:
         heeq_file = file_name
-        rtn_file = file_name.replace("heeq", "rtn")
-        gsm_file = file_name.replace("heeq", "gsm")
-    if "gsm" in file_name:
+    elif "rtn" in file_name or "sceq" in file_name:
+        rtn_file = file_name
+    elif "gse" in file_name:
+        gse_file = file_name
+    elif "gsm" in file_name:
         gsm_file = file_name
-        heeq_file = file_name.replace("gsm", "heeq")
-        rtn_file = file_name.replace("gsm", "rtn")
-    if "gse" in file_name:
-        gsm_file = file_name.replace("gse", "gsm")
-        heeq_file = file_name.replace("gse", "heeq")
-        rtn_file = file_name.replace("gse", "rtn")
 
-    # check if files exist
-    for f in [rtn_file, heeq_file, gsm_file]:
-        if not Path(data_path, f).exists():
-            print(f"File {f} not found in data path {data_path}, converting instead of loading.")
-            
-            # set the according file to None so it gets converted later
-            if "rtn" in f:
-                rtn_file = None
-            if "heeq" in f:
-                heeq_file = None
-            if "gsm" in f:
-                gsm_file = None
+    file_map = {
+        "HEEQ": heeq_file,
+        "RTN": rtn_file,
+        "GSE": gse_file,
+        "GSM": gsm_file,
+    }
 
-    if rtn_file is None and heeq_file is None and gsm_file is None:
+    # check existence
+    for key, fname in file_map.items():
+        if fname is None or not Path(data_path, fname).exists():
+            if fname is not None:
+                print(f"File {fname} not found in data path {data_path}, will convert {key} instead of loading.")
+            file_map[key] = None
 
-        raise FileNotFoundError(f"No files found, make sure at least one of the files exists AND contains the coordinate system in its name (gse, gsm, heeq, rtn).")
-    
+    if all(v is None for v in file_map.values()):
+        raise FileNotFoundError(
+            "No files found. Make sure at least one file exists and contains one of: "
+            "(gse, gsm, heeq, rtn)."
+        )
+
     print(f"Loading data from {data_path}")
 
-    if gsm_file is not None:
-        df_gsm = pickle.load(open(Path(data_path, gsm_file), "rb"))
-        df_gsm = pd.DataFrame(df_gsm[0])
-        print(f"Loaded GSM data from {gsm_file}")
+    df_heeq = _load_df(file_map["HEEQ"], "HEEQ") if file_map["HEEQ"] is not None else None
+    df_rtn  = _load_df(file_map["RTN"], "RTN")   if file_map["RTN"] is not None else None
+    df_gse  = _load_df(file_map["GSE"], "GSE")   if file_map["GSE"] is not None else None
+    df_gsm  = _load_df(file_map["GSM"], "GSM")   if file_map["GSM"] is not None else None
 
-        df_gsm = df_gsm[(df_gsm['time'] >= data_begin) & (df_gsm['time'] <= data_end)]
+    
+    # ------------------------------------------------------------------
+    # Most efficient conversion strategy:
+    #
+    # HEEQ -> RTN
+    # HEEQ -> GSE -> GSM
+    #
+    # GSE  -> HEEQ -> RTN
+    # GSE  -> GSM
+    #
+    # RTN  -> HEEQ -> GSE -> GSM
+    #
+    # GSM  -> GSE -> HEEQ -> RTN
+    # ------------------------------------------------------------------
 
-        if df_gsm.empty:
-            raise ValueError(f"GSM data is empty after filtering for the given date range {data_begin} to {data_end}. Please check the data file.")
-        
-        if rtn_file is not None:
-            df_rtn = pickle.load(open(Path(data_path, rtn_file), "rb"))
-            df_rtn = pd.DataFrame(df_rtn[0])
-            print(f"Loaded RTN data from {rtn_file}")
-            df_rtn = df_rtn[(df_rtn['time'] >= data_begin) & (df_rtn['time'] <= data_end)]
-        else:
-            df_rtn = GSM_to_RTN(df_gsm)
-            print(f"Converted GSM to RTN data")
-
-        if heeq_file is not None:
-            df_heeq = pickle.load(open(Path(data_path, heeq_file), "rb"))
-            df_heeq = pd.DataFrame(df_heeq[0])
-            print(f"Loaded HEEQ data from {heeq_file}")
-            df_heeq = df_heeq[(df_heeq['time'] >= data_begin) & (df_heeq['time'] <= data_end)]
-        else:
-            df_heeq = RTN_to_HEEQ(df_rtn)
-            print(f"Converted RTN to HEEQ data")
-
-    elif heeq_file is not None:
-        df_heeq = pickle.load(open(Path(data_path, heeq_file), "rb"))
-        df_heeq = pd.DataFrame(df_heeq[0])
-        print(f"Loaded HEEQ data from {heeq_file}")
-
-        df_heeq = df_heeq[(df_heeq['time'] >= data_begin) & (df_heeq['time'] <= data_end)]
-
-        if df_heeq.empty:
-            raise ValueError(f"HEEQ data is empty after filtering for the given date range {data_begin} to {data_end}. Please check the data file.")
-        
-        if rtn_file is not None:
-            df_rtn = pickle.load(open(Path(data_path, rtn_file), "rb"))
-            df_rtn = pd.DataFrame(df_rtn[0])
-            print(f"Loaded RTN data from {rtn_file}")
-            df_rtn = df_rtn[(df_rtn['time'] >= data_begin) & (df_rtn['time'] <= data_end)]
-        else:
-            df_rtn = HEEQ_to_RTN(df_heeq)
+    if df_heeq is not None:
+        if df_rtn is None:
+            df_rtn = HEEQ_to_RTN_wrapper(df_heeq)
             print(f"Converted HEEQ to RTN data")
-        
-        if gsm_file is not None:
-            df_gsm = pickle.load(open(Path(data_path, gsm_file), "rb"))
-            df_gsm = pd.DataFrame(df_gsm[0])
-            print(f"Loaded GSM data from {gsm_file}")
-            df_gsm = df_gsm[(df_gsm['time'] >= data_begin) & (df_gsm['time'] <= data_end)]
-        else:
-            df_gsm = RTN_to_GSM(df_rtn)
-            print(f"Converted RTN to GSM data")
+        if df_gse is None:
+            df_gse = HEEQ_to_GSE_wrapper(df_heeq)
+            print(f"Converted HEEQ to GSE data")
+        if df_gsm is None:
+            df_gsm = GSE_to_GSM_wrapper(df_gse)
+            print(f"Converted GSE to GSM data")
     
-    elif rtn_file is not None:
-        df_rtn = pickle.load(open(Path(data_path, rtn_file), "rb"))
-        df_rtn = pd.DataFrame(df_rtn[0])
-        print(f"Loaded RTN data from {rtn_file}")
-
-        df_rtn = df_rtn[(df_rtn['time'] >= data_begin) & (df_rtn['time'] <= data_end)]
-
-        if df_rtn.empty:
-            raise ValueError(f"RTN data is empty after filtering for the given date range {data_begin} to {data_end}. Please check the data file.")
-        
-        if heeq_file is not None:
-            df_heeq = pickle.load(open(Path(data_path, heeq_file), "rb"))
-            df_heeq = pd.DataFrame(df_heeq[0])
-            print(f"Loaded HEEQ data from {heeq_file}")
-            df_heeq = df_heeq[(df_heeq['time'] >= data_begin) & (df_heeq['time'] <= data_end)]
-        else:
-            df_heeq = RTN_to_HEEQ(df_rtn)
+    elif df_gse is not None:
+        if df_heeq is None:
+            df_heeq = GSE_to_HEEQ_wrapper(df_gse)
+            print(f"Converted GSE to HEEQ data")
+        if df_rtn is None:
+            df_rtn = HEEQ_to_RTN_wrapper(df_heeq)
+            print(f"Converted HEEQ to RTN data")
+        if df_gsm is None:
+            df_gsm = GSE_to_GSM_wrapper(df_gse)
+            print(f"Converted GSE to GSM data")
+    
+    elif df_rtn is not None:
+        if df_heeq is None:
+            df_heeq = HEEQ_to_RTN_wrapper(df_rtn)
             print(f"Converted RTN to HEEQ data")
-
-        if gsm_file is not None:
-            df_gsm = pickle.load(open(Path(data_path, gsm_file), "rb"))
-            df_gsm = pd.DataFrame(df_gsm[0])
-            print(f"Loaded GSM data from {gsm_file}")
-            df_gsm = df_gsm[(df_gsm['time'] >= data_begin) & (df_gsm['time'] <= data_end)]
-        else:
-            df_gsm = RTN_to_GSM(df_rtn)
-            print(f"Converted RTN to GSM data")
+        if df_gse is None:
+            df_gse = HEEQ_to_GSE_wrapper(df_heeq)
+            print(f"Converted HEEQ to GSE data")
+        if df_gsm is None:
+            df_gsm = GSE_to_GSM_wrapper(df_gse)
+            print(f"Converted GSE to GSM data")
     
-    else:
-        df_gse = pickle.load(open(Path(data_path, file_name), "rb"))
-        df_gse = pd.DataFrame(df_gse[0])
-        print(f"Loaded GSE data from {file_name}")
-
-        df_gse = df_gse[(df_gse['time'] >= data_begin) & (df_gse['time'] <= data_end)]
-
-        if df_gse.empty:
-            raise ValueError(f"GSE data is empty after filtering for the given date range {data_begin} to {data_end}. Please check the data file.")
-
-        df_gsm = GSE_to_GSM(df_gse)
-        print(f"Converted GSE to GSM data")
-
-        df_rtn = GSM_to_RTN(df_gsm)
-        print(f"Converted GSM to RTN data")
-
-        df_heeq = RTN_to_HEEQ(df_rtn)
-        print(f"Converted RTN to HEEQ data")
+    elif df_gsm is not None:
+        if df_gse is None:
+            df_gse = GSE_to_GSM_wrapper(df_gsm)
+            print(f"Converted GSM to GSE data")
+        if df_heeq is None:
+            df_heeq = GSE_to_HEEQ_wrapper(df_gse)
+            print(f"Converted GSE to HEEQ data")
+        if df_rtn is None:
+            df_rtn = HEEQ_to_RTN_wrapper(df_heeq)
+            print(f"Converted HEEQ to RTN data")
 
 
-    df_rtn = df_rtn[(df_rtn['time'] >= data_begin) & (df_rtn['time'] <= data_end)]
-    df_heeq = df_heeq[(df_heeq['time'] >= data_begin) & (df_heeq['time'] <= data_end)]
-    df_gsm = df_gsm[(df_gsm['time'] >= data_begin) & (df_gsm['time'] <= data_end)]
+    df_rtn  = df_rtn[(df_rtn["time"] >= data_begin) & (df_rtn["time"] <= data_end)]
+    df_heeq = df_heeq[(df_heeq["time"] >= data_begin) & (df_heeq["time"] <= data_end)]
+    df_gse  = df_gse[(df_gse["time"] >= data_begin) & (df_gse["time"] <= data_end)]
+    df_gsm  = df_gsm[(df_gsm["time"] >= data_begin) & (df_gsm["time"] <= data_end)]
 
-    b_data = {}
-
-    b_data["RTN"] = np.column_stack(
-        (
-            df_rtn["bx"],
-            df_rtn["by"],
-            df_rtn["bz"]
-        )
-    )
+    b_data = {
+        "RTN": np.column_stack((df_rtn["bx"], df_rtn["by"], df_rtn["bz"])),
+        "HEEQ": np.column_stack((df_heeq["bx"], df_heeq["by"], df_heeq["bz"])),
+        "GSE": np.column_stack((df_gse["bx"], df_gse["by"], df_gse["bz"])),
+        "GSM": np.column_stack((df_gsm["bx"], df_gsm["by"], df_gsm["bz"])),
+    }
     
-    b_data["HEEQ"] = np.column_stack(
-        (
-            df_heeq["bx"],
-            df_heeq["by"],
-            df_heeq["bz"]
-        )
-    )
-
-    b_data["GSM"] = np.column_stack(
-        (
-            df_gsm["bx"],
-            df_gsm["by"],
-            df_gsm["bz"]
-        )
-    )
-
     t_data = pd.to_datetime(df_rtn['time']).to_list()
 
     pos_data = np.column_stack(
