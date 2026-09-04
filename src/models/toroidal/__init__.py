@@ -125,6 +125,17 @@ class ToroidalModel(SimulationBlackBox):
         
         return q_tmp[0][0]
     
+    def apex_speed(
+        self,
+        pos: np.ndarray
+    ):
+        q_tmp = np.zeros((len(self.iparams_arr), 3))
+
+        if self.shape_model == "thin_torus":
+            thin_torus_sq(pos, self.iparams_arr, self.sparams_arr, self.qs_sq, q_tmp)
+        
+        return self.sparams_arr[0][0]
+    
     def axis_to_boundary_distance(
         self,
         psi: float,

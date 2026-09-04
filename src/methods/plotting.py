@@ -140,7 +140,7 @@ def plot_spacecraft(ax, data_cache, spacecraft, color, symsize_spacecraft, t_sna
 
     return ax
 
-def plot_cme(ax, obj, color, lw = 1, alpha = .12):
+def plot_cme(ax, obj, color, lw = 1, alpha = .12, highlight_ecliptic = False, highlight_ecliptic_alpha = 0.3):
 
     wf_model = obj.visualize_shape(iparam_index = 0)
 
@@ -151,6 +151,28 @@ def plot_cme(ax, obj, color, lw = 1, alpha = .12):
     y = wf_array[:, :, 1].flatten()
     z = wf_array[:, :, 2].flatten()
     ax.plot_wireframe(*wf_model.T, color=color, linewidth=lw, alpha=alpha)
+
+    if highlight_ecliptic:
+
+        intersecton_wf_model = obj.visualize_shape(iparam_index = 0, resolution = 1)
+
+        intersection_wf_array = np.array(intersecton_wf_model)
+
+        # Highlight the ecliptic plane (z=0)
+        x_mesh = intersection_wf_array[:, :, 0]
+        y_mesh = intersection_wf_array[:, :, 1]
+        z_mesh = intersection_wf_array[:, :, 2]
+
+        ax.contourf(
+            x_mesh,
+            y_mesh,
+            z_mesh,
+            levels=[z_mesh.min(), 0],
+            zdir="z",
+            offset=0,
+            colors=[color],
+            alpha=highlight_ecliptic_alpha,
+        )
 
     return ax
 
@@ -205,11 +227,11 @@ def visualize_fieldline(obj, q0, index=0, steps=1000, step_size=0.01):
     return fl
 
 
-def plot_3dcore_field(ax, obj, step_size=2e-3, q0=[0.8, 0.1, np.pi/2],**kwargs):
+def plot_3dcore_field(ax, obj, step_size=2e-3, q0=[0.8, 0.1, np.pi/2], steps=40000, **kwargs):
     print('Tracing Fieldlines')
     #q0=[0.9, .1, .5]
     #q0i =np.array(q0, dtype=np.float32)
-    fl, qfl = obj.visualize_fieldline(q0, index=0,  steps=10000, step_size=step_size, return_phi=True)
+    fl, qfl = obj.visualize_fieldline(q0, index=0,  steps=steps, step_size=step_size, return_phi=True)
     ax.plot(*fl.T, **kwargs)
 
     diff = qfl[1:-10] - qfl[:-11]

@@ -294,21 +294,24 @@ def make_flux_rope_type_models(model_object, tol=1.0):
         ]
 
         if len(set(handedness_axis_pairs)) > 1:
-            raise ValueError(
+            print(
                 f"Multiple flux rope types found: {counts_str}. "
                 f"They differ in handedness and/or axis direction, not just boundary ambiguity."
             )
+
+
+
         else:
             print(
                 f"Multiple flux rope types found, but they only differ by boundary ambiguity. "
                 f"Counts: {counts_str}"
             )
 
-            # Most common actual type
-            flux_rope_type = Counter(valid_flux_rope_types).most_common(1)[0][0]
+        # Most common actual type
+        flux_rope_type = Counter(valid_flux_rope_types).most_common(1)[0][0]
 
-            valid_high_inc = [f for f in high_inc_flags if f is not None]
-            high_inc_flag = Counter(valid_high_inc).most_common(1)[0][0] if valid_high_inc else None
+        valid_high_inc = [f for f in high_inc_flags if f is not None]
+        high_inc_flag = Counter(valid_high_inc).most_common(1)[0][0] if valid_high_inc else None
 
     elif len(valid_flux_rope_types) == 1:
         print(f"All models have the same flux rope type: {valid_flux_rope_types[0]}")
